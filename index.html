@@ -32,6 +32,9 @@
             background-color: var(--bg-dark); /* Evita destellos blancos al redimensionar */
             height: 100%;
             overflow: hidden;
+            /* PRUEBA: Forzar el renderizado detrás de las barras del sistema */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
         }
 
         * { 
@@ -50,6 +53,7 @@
             flex-direction: column; 
             /* Evita el rebote elástico que causa la línea blanca en Chrome Mobile */
             overscroll-behavior: none;
+            box-shadow: 0 0 0 2px var(--bg-dark);
             user-select: none;
             -webkit-user-select: none;
         }
