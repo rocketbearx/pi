@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pi">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0a0c12">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="manifest" href="manifest.json">
+    <title>Pi Navigation Flow</title>
+    <style>
+        :root {
+            --primary: #007BC2;
+            --red-strong: #FF0000;
+            --red-soft: rgba(255, 0, 0, 0.25);
+            --red-soft-focus: rgba(255, 0, 0, 0.45);
+            --bg-dark: #0a0c12;
+            --card-bg: #111827;
+            --text-dim: #475569;
+            --text-focus: #ffffff;
+            --footer-height: 75px;
+            --row-height: 80px; 
+            --top-padding: 40px;
+            /* Variable dinámica para la altura real visible, fundamental para corregir el bug del teclado */
+            --vh: 100vh;
+        }
+
+        html {
+            background-color: var(--bg-dark); /* Evita destellos blancos al redimensionar */
+            height: 100%;
+            overflow: hidden;
+        }
+
+        * { 
+            box-sizing: border-box; 
+        }
+
+        body { 
+            margin: 0; 
+            padding: 0; 
+            width: 100%; 
+            height: var(--vh); 
+            overflow: hidden; 
+            background: var(--bg-dark); 
+            font-family: 'Courier New', Courier, monospace; 
+            display: flex; 
+            flex-direction: column; 
+            /* Evita el rebote elástico que causa la línea blanca en Chrome Mobile */
+            overscroll-behavior: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* --- ESTILOS DE LA BARRA DE DESPLAZAMIENTO (SCROLLBAR) --- */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 10px; }
+
+        /* --- VISTA DE DÍGITOS (SCROLLER VIRTUALIZADO) --- */
+        #pi-scroller {
+            flex: 1;
+            overflow-y: auto;
+            position: relative;
+            -webkit-overflow-scrolling: touch;
+            overflow-x: hidden;
+        }
+
+        /* Shim para simular la altura total de miles de dígitos sin renderizarlos todos */
+        #total-height-shim { position: absolute; top: 0; left: 0; width: 1px; }
+
+        #visible-canvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%;
+            padding: 0 5px;
+            will-change: transform;
+            margin-top: var(--top-padding);
+        }
+
+        #digits-body { margin: 0 auto; line-height: var(--row-height); font-size: 0; }
+
+        .pi-digit, .pi-prefix {
+            display: inline-block;
+            text-align: center;
+            vertical-align: top;
+            font-size: 1.8rem;
+            height: var(--row-height);
+            position: relative;
+        }
+        .pi-digit { width: 1.2ch; cursor: pointer; color: var(--text-dim); }
+        .pi-prefix { width: 2.4ch; color: white; font-weight: bold; }
+
+        /* --- EFECTOS DE RESALTADO (HIGHLIGHTS) --- */
+        .highlight-blue { color: var(--text-focus); }
+        .highlight-blue::after {
+            content: ''; position: absolute; bottom: 10%; left: 0; width: 100%; height: 4px;
+            background: var(--primary); z-index: 10;
+        }
+        
+        .highlight-red { 
+            background: linear-gradient(to bottom, transparent 10%, var(--red-soft) 10%, transparent 90%); 
+        }
+        .highlight-red::before {
+            content: ''; position: absolute; top: 10%; left: 0; width: 100%; height: 4px;
+            background: var(--red-strong); z-index: 10;
+        }
+        .highlight-red.current-find { 
+            background: linear-gradient(to bottom, transparent 10%, var(--red-soft-focus) 10%, transparent 90%); 
+            color: white; 
+        }
+
+        /* --- MODO INMERSIVO (OVERLAY) --- */
+        #immersion-overlay {
+            display: none;
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: var(--footer-height);
+            z-index: 500;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            background: rgba(10, 12, 18, 0.5);
+            flex-direction: column; align-items: center; justify-content: center;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #timer-bar-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 5px;
+            background: rgba(255,255,255,0.1);
+        }
+
+        #timer-bar-fill {
+            width: 100%; height: 100%; background: white;
+            transform: scaleX(0); transform-origin: left;
+        }
+
+        #mute-btn {
+            position: absolute; top: 25px; left: 25px;
+            cursor: pointer; fill: white; opacity: 0.4;
+        }
+        #mute-btn.active { opacity: 1; fill: var(--primary); }
+
+        #big-display {
+            width: 100%; height: 300px;
+            display: flex; align-items: center; justify-content: center;
+            position: relative;
+        }
+
+        .big-pair {
+            position: absolute;
+            font-size: 10rem; color: white; font-weight: bold;
+            transition: transform 0.4s ease, opacity 0.4s ease;
+        }
+
+        /* --- FOOTER Y CONTROLES --- */
+        footer {
+            background: var(--card-bg); 
+            height: var(--footer-height);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex; align-items: center; padding: 0 20px;
+            position: relative; flex-shrink: 0; z-index: 600;
+        }
+
+        .nav-group { 
+            position: absolute; left: 50%; transform: translateX(-50%); 
+            display: flex; gap: 15px; z-index: 605;
+        }
+
+        .btn-main {
+            background: var(--primary); border: none; border-radius: 10px;
+            width: 65px; height: 48px; cursor: pointer; 
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* --- BUSCADOR (OVERLAY DENTRO DEL FOOTER) --- */
+        #search-overlay {
+            display: none; position: absolute; inset: 0;
+            background: var(--card-bg); align-items: center; justify-content: center; z-index: 610;
+        }
+
+        .search-content { display: flex; align-items: center; justify-content: center; width: 100%; }
+
+        .search-input-wrapper {
+            display: flex; align-items: center; background: var(--bg-dark);
+            border: 1px solid var(--text-dim); border-radius: 8px; 
+            height: 42px; padding: 0 10px; margin: 0 5px;
+        }
+
+        #search-input { 
+            background: transparent; border: none; color: white; 
+            width: 110px; text-align: center; outline: none; font-size: 1rem; 
+        }
+
+        .tri-search { 
+            width: 45px; height: 45px; display: flex; 
+            align-items: center; justify-content: center; cursor: pointer; 
+        }
+        .tri-search.disabled { opacity: 0.15; cursor: default; }
+
+        .triangle-l { width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-right: 12px solid white; }
+        .triangle-r { width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 12px solid white; }
+
+        .side-icon { cursor: pointer; fill: #475569; transition: fill 0.2s; }
+        .side-icon.active { fill: var(--primary); }
+        .eye-pos { position: absolute; left: 25px; }
+        .lupa-pos { position: absolute; right: 25px; }
+
+        /* --- MENÚ DE SELECCIÓN DE VELOCIDAD --- */
+        #speed-menu {
+            display: none; position: absolute; bottom: 80px; right: 20px;
+            background: var(--card-bg); border: 1px solid var(--text-dim);
+            border-radius: 8px; flex-direction: column; z-index: 700;
+        }
+
+        .speed-opt {
+            padding: 12px 20px; color: white; cursor: pointer; 
+            border-bottom: 1px solid #2d3748;
+        }
+        .speed-opt.selected { color: var(--primary); font-weight: bold; }
+        .speed-opt:last-child { border-bottom: none; }
+        .speed-opt:hover { background: #1f2937; }
+
+        @media (max-width: 767px) {
+            .nav-group { position: static; transform: none; margin: 0 auto; }
+            .big-pair { font-size: 7rem; }
+        }
+    </style>
+</head>
+<body onclick="closeSpeedMenu(event)">
+
+    <div id="pi-scroller">
+        <div id="total-height-shim"></div>
+        <div id="visible-canvas">
+            <div id="digits-body"></div>
+        </div>
+    </div>
+
+    <div id="immersion-overlay">
+        <div id="timer-bar-container"><div id="timer-bar-fill"></div></div>
+        
+        <svg id="mute-btn" class="active" onclick="toggleMute()" width="30" height="30" viewBox="0 0 24 24">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+        </svg>
+
+        <div id="big-display"></div>
+    </div>
+
+    <footer>
+        <svg class="side-icon eye-pos" id="eye-icon" onclick="toggleImmersion()" width="32" height="32" viewBox="0 0 24 24">
+            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+        </svg>
+
+        <div class="nav-group" id="footer-nav-arrows">
+            <button class="btn-main" onclick="moveFocus(-1)"><div class="triangle-l"></div></button>
+            <button class="btn-main" onclick="moveFocus(1)"><div class="triangle-r"></div></button>
+        </div>
+
+        <svg class="side-icon lupa-pos" id="right-btn" 
+             onmousedown="handleRightDown(event)" 
+             ontouchstart="handleRightDown(event)" 
+             width="28" height="28" viewBox="0 0 24 24">
+        </svg>
+
+        <div id="speed-menu">
+            <div class="speed-opt" data-s="2" onclick="setTimerSpeed(2)">2s</div>
+            <div class="speed-opt" data-s="3" onclick="setTimerSpeed(3)">3s</div>
+            <div class="speed-opt" data-s="4" onclick="setTimerSpeed(4)">4s</div>
+            <div class="speed-opt" data-s="6" onclick="setTimerSpeed(6)">6s</div>
+            <div class="speed-opt" data-s="8" onclick="setTimerSpeed(8)">8s</div>
+        </div>
+
+        <div id="search-overlay" onpointerdown="preventBlur(event)">
+            <div class="search-content">
+                <div class="tri-search disabled" id="s-prev" onpointerdown="handleNavClick(event, -1)"><div class="triangle-l"></div></div>
+                <div class="search-input-wrapper">
+                    <input type="text" id="search-input" placeholder="buscar" inputmode="numeric">
+                </div>
+                <div class="tri-search disabled" id="s-next" onpointerdown="handleNavClick(event, 1)"><div class="triangle-r"></div></div>
+                <div style="display:flex; gap:20px; margin-left:15px;">
+                    <span style="color:white; cursor:pointer; font-size:1.6rem" onclick="confirmSearch()">✓</span>
+                    <span style="color:white; cursor:pointer; font-size:1.6rem" onclick="cancelSearch()">✕</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Pi String corregido según instrucciones previas
+        const piString = "1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679821480865132823066470938446095505822317253594081284811174502841027019385211055596446229489549303819644288109756659334461284756482337867831652712019091456485669234603486104543266482133936072602491412737245870066063155881748815209209628292540917153643678925903600113305305488204665213841469519415116094330572703657595919530921861173819326117931051185480744623799627495673518857527248912279381830119491298336733624406566430860213949463952247371907021798609437027705392171762931767523846748184676694051320005681271452635608277857713427577896091736371787214684409012249534301465495853710507922796892589235420199561121290219608640344181598136297747713099605187072113499999983729780499510597317328160963185950244594553469083026425223082533446850352619311881710100031378387528865875332083814206171776691473035982534904287554687311595628638823537875937519577818577805321712268066130019278766111959092164201989380952572010654858632788659361533818279682303019520353018529689957736225994138912497217752834791315155748572424541506959508295331168617278558890750983817546374649393192550604009277016711390098488240128583616035637076601047101819429555961989467678374494482553797747268471040475346462080466842590694912933136770289891521047521620569660240580381501935112533824300355876402474964732639141992726042699227967823547816360093417216412199245863150302861829745557067498385054945885869269956909272107975093029553211653449872027559602364806654991198818347977535663698074265425278625518184175746728909777727938000816470600161452491921732172147723501414419735685481613611573525521334757418494684385233239073941433345477624168625189835694855620992192221842725502542568876717904946016534668049886272327917860857843838279679766814541009538837863609506800642251252051173929848960841284886269456042419652850222106611863067442786220391949450471237137869609563643719172874677646575739624138908658326459958133904780275900994657640789512694683983525957098258226205224894077267194782684826014769909026401363944374553050682034962524517493996514314298091906592509372216964615157098583874105978859597729754989301617539284681382686838689427741559918559252459539594310499725246808459872736446958486538367362226260991246080512438843904512441365497627807977156914359977001296160894416948685558484063534220722258284886481584560285060168427394522674676788952521385225499546667278239864565961163548862305774564980355936345681743241125150760694794510965960940252288797108931456691368672287489405601015033086179286809208747609178249385890097149096759852613655497818931297848216829989487226588048575640142704775551323796414515237462343645428584447952658678210511413547357395231134271661021359695362314429524849371871101457654035902799344037420073105785390621983874478084784896833214457138687519435064302184531910484810053706146806749192781911979399520614196634287544406437451237181921799983910159195618146751426912397489409071864942319615679452080951465502252316038819301420937621378559566389377870830390697920773467221825625996615014215030680384477345492026054146659252014974428507325186660021324340881907104863317346496514539057962685610055081066587969981635747363840525714591028970641401109712062804390397595156771577004203378699360072305587631763594218731251471205329281918261861258673215791984148488291644706095752706957220917567116722910981690915280173506712748583222871835209353965725121083579151369882091444210067510334671103141267111369908658516398315019701651511685171437657618351556508849099898599823873455283316355076479185358932261854896321329330898570642046752590709154814165498594616371802709819943099244889575712828905923233260972997120844335732654893823911932597463667305836041428138830320382490375898524374417029132765618093773444030707469211201913020330380197621101100449293215160842444859637669838952286847831235526582131449576857262433441893039686426243410773226978028073189154411010446823252716201052652272111660396665573092547110557853763466820653109896526918620564769312570586356620185581007293606598764861179104533488503461136576867532494416680396265797877185560845529654126654085306143444318586769751456614068007002378776591344017127494704205622305389945613140711270004078547332699390814546646458807972708266830634328587856983052358089330657574067954571637752542021149557615814002501262285941302164715509792592309907965473761255176567513575178296664547791745011299614890304639947132962107340437518957359614589019389713111790429782856475032031986915140287080859904801094121472213179476477726224142548545403321571853061422881375850430633217518297986622371721591607716692547487389866549494501146540628433663937900397692656721463853067360965712091807638327166416274888800786925602902284721040317211860820419000422966171196377921337575114959501566049631862947265473642523081770367515906735023507283540567040386743513622224771589150495309844489333096340878076932599397805419341447377441842631298608099888687413260472156951623965864573021631598193195167353812974167729478672422924654366800980676928238280689964004824354037014163149658979409243237896907069779422362508221688957383798623001593776471651228935786015881617557829735233446042815126272037343146531977774160319906655418763979293344195215413418994854447345673831624993419131814809277771038638773431772075456545322077709212019051660962804909263601975988281613323166636528619326686336062735676303544776280350450777235547105859548702790814356240145171806246436267945612753181340783303362542327839449753824372058353114771199260638133467768796959703098339130771098704085913374641442822772634659470474587847787201927715280731767907707157213444730605700733492436931138350493163128404251219256517980694113528013147013047816437885185290928545201165839341965621349143415956258658655705526904965209858033850722426482939728584783163057777560688876446248246857926039535277348030480290058760758251047470916439613626760449256274204208320856611906254543372131535958450687724602901618766795240616342522577195429162991930645537799140373404328752628889639958794757291746426357455254079091451357111369410911939325191076020825202618798531887705842972591677813149699009019211697173727847684726860849003377024242916513005005168323364350389517029893922334517220138128069650117844087451960121228599371623130171144484640903890644954440061986907548516026327505298349187407866808818338510228334508504860825039302133219715518430635455007668282949304137765527939751754613953984683393638304746119966538581538420568533862186725233402830871123282789212507712629463229563989898935821167456270102183564622013496715188190973038119800497340723961036854066431939509790190699639552453005450580685501956730229219139339185680344903982059551002263535361920419947455385938102343955449597783779023742161727111723643435439478221818528624085140066604433258885698670543154706965747458550332323342107301545940516553790686627333799585115625784322988273723198987571415957811196358330059408730681216028764962867446047746491599505497374256269010490377819868359381465741268049256487985561453723478673303904688383436346553794986419270563872931748723320837601123029911367938627089438799362016295154133714248928307220126901475466847653576164773794675200490757155527819653621323926406160136358155907422020203187277605277219005561484255518792530343513984425322341576233610642506390497500865627109535919465897514131034822769306247435363256916078154781811528436679570611086153315044521274739245449454236828860613408414863776700961207151249140430272538607648236341433462351897576645216413767969031495019108575984423919862916421939949072362346468441173940326591840443780513338945257423995082965912285085558215725031071257012668302402929525220118726767562204154205161841634847565169998116141010029960783869092916030288400269104140792886215078424516709087000699282120660418371806535567252532567532861291042487761825829765157959847035622262934860034158722980534989650226291748788202734209222245339856264766914905562842503912757710284027998066365825488926488025456610172967026640765590429099456815065265305371829412703369313785178609040708667114965583434347693385781711386455873678123014587687126603489139095620099393610310291616152881384379099042317473363948045759314931405297634757481193567091101377517210080315590248530906692037671922033229094334676851422144773793937517034436619910403375111735471918550464490263655128162288244625759163330391072253837421821408835086573917715096828874782656995995744906617583441375223970968340800535598491754173818839994469748676265516582765848358845314277568790029095170283529716344562129640435231176006651012412006597558512761785838292041974844236080071930457618932349229279650198751872127267507981255470958904556357921221033346697499235630254947802490114195212382815309114079073860251522742995818072471625916685451333123948049470791191532673430282441860414263639548000448002670496248201792896476697583183271314251702969234889627668440323260927524960357996469256504936818360900323809293459588970695365349406034021665443755890045632882250545255640564482465151875471196218443965825337543885690941130315095261793780029741207665147939425902989695946995565761218656196733786236256125216320862869222103274889218654364802296780705765615144632046927906821207388377814233562823608963208068222468012248261177185896381409183903673672220888321513755600372798394004152970028783076670944474560134556417254370906979396122571429894671543578468788614445812314593571984922528471605049221242470141214780573455105008019086996033027634787081081754501193071412233908663938339529425786905076431006383519834389341596131854347546495569781038293097164651438407007073604112373599843452251610507027056235266012764848308407611830130527932054274628654036036745328651057065874882256981579367897669742205750596834408697350201410206723585020072452256326513410559240190274216248439140359989535394590944070469120914093870012645600162374288021092764579310657922955249887275846101264836999892256959688159205600101655256375678";
+        
+        const PATHS = {
+            search: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+            timer: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z'
+        };
+
+        const ROW_HEIGHT = 80; 
+        let charsPerLine = 10;
+        let currentIndex = 0;
+        
+        let searchResults = [];
+        let searchCursor = 0;
+        let persistentRed = null;
+        let lastConfirmedSearch = "";
+
+        let isImmersion = false;
+        let isMuted = false;
+        let timerActive = false;
+        let timerSeconds = 3;
+        let timerRAF;
+
+        const scroller = document.getElementById('pi-scroller');
+        const canvas = document.getElementById('visible-canvas');
+        const body = document.getElementById('digits-body');
+        const sInput = document.getElementById('search-input');
+        const sOverlay = document.getElementById('search-overlay');
+        const iOverlay = document.getElementById('immersion-overlay');
+        const rightBtn = document.getElementById('right-btn');
+        const bigDisplay = document.getElementById('big-display');
+        const timerFill = document.getElementById('timer-bar-fill');
+        const speedMenu = document.getElementById('speed-menu');
+
+        /**
+         * Actualiza la geometría del scroller virtual.
+         * Detecta el ancho disponible y la altura del viewport real (teclado).
+         */
+        function updateGeometry() {
+            const vv = window.visualViewport;
+            const realHeight = vv ? vv.height : window.innerHeight;
+            document.documentElement.style.setProperty('--vh', `${realHeight}px`);
+
+            const probe = document.createElement('span');
+            probe.className = 'pi-digit'; probe.textContent = '0';
+            body.appendChild(probe);
+            const cw = probe.getBoundingClientRect().width;
+            body.removeChild(probe);
+
+            const avail = scroller.clientWidth - 15;
+            charsPerLine = Math.floor(avail / cw);
+            if(charsPerLine % 2 !== 0) charsPerLine--;
+            body.style.width = `${charsPerLine * cw}px`;
+            
+            const rows = 1 + Math.ceil((piString.length - (charsPerLine - 2)) / charsPerLine);
+            document.getElementById('total-height-shim').style.height = `${rows * ROW_HEIGHT + 150}px`;
+            
+            virtualRender();
+        }
+
+        /**
+         * Renderizado virtual: Dibuja solo las filas visibles en pantalla.
+         */
+        function virtualRender() {
+            const st = scroller.scrollTop;
+            const scrollerHeight = scroller.clientHeight;
+            const startR = Math.max(0, Math.floor(st / ROW_HEIGHT) - 1);
+            const endR = Math.ceil((st + scrollerHeight) / ROW_HEIGHT) + 1;
+            
+            canvas.style.transform = `translateY(${startR * ROW_HEIGHT}px)`;
+            
+            let h = "";
+            for(let r=startR; r<=endR; r++) {
+                let idx = r === 0 ? 0 : (charsPerLine - 2) + (r - 1) * charsPerLine;
+                if(idx >= piString.length) break;
+                h += `<div style="height:${ROW_HEIGHT}px; white-space:nowrap; font-size:0;">`;
+                let limit = r === 0 ? charsPerLine - 2 : charsPerLine;
+                if(r === 0) h += `<span class="pi-prefix">3.</span>`;
+                for(let c=0; c<limit; c++) {
+                    const i = idx + c; if(i >= piString.length) break;
+                    let cls = ['pi-digit'];
+                    if(i === currentIndex || i === currentIndex + 1) cls.push('highlight-blue');
+                    if(isRed(i)) {
+                        cls.push('highlight-red');
+                        if(isCurrentFind(i)) cls.push('current-find');
+                    }
+                    h += `<span class="${cls.join(' ')}" onclick="setFocus(${i})">${piString[i]}</span>`;
+                }
+                h += `</div>`;
+            }
+            body.innerHTML = h;
+        }
+
+        // --- NAVEGACIÓN ---
+
+        function setFocus(i) {
+            currentIndex = i % 2 === 0 ? i : i - 1;
+            scrollToIndex(currentIndex);
+            if(isImmersion) updateBigDigit('center');
+        }
+
+        function moveFocus(dir) {
+            let n = currentIndex + (dir * 2);
+            if(n >= 0 && n < piString.length - 1) {
+                currentIndex = n;
+                scrollToIndex(currentIndex);
+                if(isImmersion) updateBigDigit(dir > 0 ? 'next' : 'prev');
+            }
+        }
+
+        function scrollToIndex(idx) {
+            let row = idx < (charsPerLine - 2) ? 0 : Math.floor((idx - (charsPerLine - 2)) / charsPerLine) + 1;
+            const targetY = (row * ROW_HEIGHT) + 40 - (scroller.clientHeight / 2) + (ROW_HEIGHT / 2);
+            scroller.scrollTo({ top: targetY, behavior: 'smooth' });
+            virtualRender();
+        }
+
+        // --- BÚSQUEDA ---
+
+        function toggleSearch() {
+            if(sOverlay.style.display === 'flex') {
+                cancelSearch();
+            } else {
+                sOverlay.style.display = 'flex';
+                rightBtn.classList.add('active');
+                sInput.value = lastConfirmedSearch;
+                triggerSearch(true); 
+                setTimeout(() => sInput.focus(), 50);
+            }
+        }
+
+        sInput.addEventListener('input', () => {
+            sInput.value = sInput.value.replace(/[^0-9]/g, '');
+            triggerSearch(false);
+        });
+
+        function triggerSearch(keepCursor) {
+            const val = sInput.value;
+            searchResults = [];
+            if(val) {
+                let p = piString.indexOf(val);
+                while(p !== -1) {
+                    searchResults.push({start: p, end: p + val.length});
+                    p = piString.indexOf(val, p + 1);
+                }
+            }
+            if(keepCursor && persistentRed && val === lastConfirmedSearch) {
+                const idx = searchResults.findIndex(r => r.start === persistentRed.start);
+                if(idx !== -1) searchCursor = idx;
+            } else if (!keepCursor) {
+                searchCursor = 0;
+            }
+            updateSearchUI();
+            
+            // Si hay resultados, centramos la ocurrencia roja actual
+            if (searchResults.length > 0) {
+                scrollToIndex(searchResults[searchCursor].start);
+            }
+            virtualRender();
+        }
+
+        function updateSearchUI() {
+            const hasRes = searchResults.length > 1;
+            document.getElementById('s-prev').classList.toggle('disabled', !hasRes);
+            document.getElementById('s-next').classList.toggle('disabled', !hasRes);
+        }
+
+        function handleNavClick(e, dir) {
+            e.preventDefault();
+            if(searchResults.length > 1) {
+                searchCursor = (searchCursor + dir + searchResults.length) % searchResults.length;
+                scrollToIndex(searchResults[searchCursor].start);
+                virtualRender();
+            }
+        }
+
+        function confirmSearch() {
+            lastConfirmedSearch = sInput.value;
+            if(searchResults.length > 0) {
+                persistentRed = searchResults[searchCursor];
+                // El foco azul se mueve donde se confirmó la búsqueda
+                currentIndex = persistentRed.start % 2 === 0 ? persistentRed.start : persistentRed.start - 1;
+            } else {
+                persistentRed = null;
+            }
+            closeSearchUI();
+            scrollToIndex(currentIndex);
+        }
+
+        function cancelSearch() {
+            sInput.value = lastConfirmedSearch;
+            triggerSearch(true); 
+            closeSearchUI();
+        }
+
+        function closeSearchUI() {
+            sOverlay.style.display = 'none';
+            rightBtn.classList.remove('active');
+            virtualRender();
+        }
+
+        function isRed(i) {
+            if(sOverlay.style.display === 'flex') return searchResults.some(r => i >= r.start && i < r.end);
+            return persistentRed && i >= persistentRed.start && i < persistentRed.end;
+        }
+
+        function isCurrentFind(i) {
+            if(sOverlay.style.display !== 'flex') return false;
+            const c = searchResults[searchCursor];
+            return c && i >= c.start && i < c.end;
+        }
+
+        function preventBlur(e) { if (e.target !== sInput) e.preventDefault(); }
+
+        // --- MODO INMERSIVO ---
+
+        function toggleImmersion() {
+            isImmersion = !isImmersion;
+            iOverlay.style.display = isImmersion ? 'flex' : 'none';
+            document.getElementById('eye-icon').classList.toggle('active', isImmersion);
+            
+            if(isImmersion) {
+                if(sOverlay.style.display === 'flex') cancelSearch();
+                rightBtn.innerHTML = `<path d="${PATHS.timer}"/>`;
+                rightBtn.classList.toggle('active', timerActive);
+                updateBigDigit('center');
+            } else {
+                rightBtn.innerHTML = `<path d="${PATHS.search}"/>`;
+                rightBtn.classList.remove('active');
+                stopTimer();
+            }
+            virtualRender();
+        }
+
+        function updateBigDigit(dir) {
+            const pair = piString.substring(currentIndex, currentIndex + 2);
+            const el = document.createElement('div');
+            el.className = 'big-pair';
+            el.textContent = pair;
+
+            if(dir === 'next') {
+                el.style.transform = 'translateX(120%)';
+                bigDisplay.appendChild(el);
+                setTimeout(() => {
+                    if(bigDisplay.children[0]) {
+                        bigDisplay.children[0].style.transform = 'translateX(-120%)';
+                        bigDisplay.children[0].style.opacity = '0';
+                    }
+                    el.style.transform = 'translateX(0)';
+                }, 10);
+            } else if(dir === 'prev') {
+                el.style.transform = 'translateX(-120%)';
+                bigDisplay.appendChild(el);
+                setTimeout(() => {
+                    if(bigDisplay.children[0]) {
+                        bigDisplay.children[0].style.transform = 'translateX(120%)';
+                        bigDisplay.children[0].style.opacity = '0';
+                    }
+                    el.style.transform = 'translateX(0)';
+                }, 10);
+            } else {
+                bigDisplay.innerHTML = '';
+                bigDisplay.appendChild(el);
+            }
+
+            setTimeout(() => {
+                while(bigDisplay.children.length > 1) bigDisplay.removeChild(bigDisplay.firstChild);
+            }, 450);
+
+            speak(pair);
+            if(timerActive) startTimer();
+        }
+
+        function speak(t) {
+            if(isMuted) return;
+            window.speechSynthesis.cancel();
+            const m = new SpeechSynthesisUtterance(t);
+            m.lang = 'es-ES'; m.rate = 1.2;
+            window.speechSynthesis.speak(m);
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            document.getElementById('mute-btn').classList.toggle('active', !isMuted);
+        }
+
+        // --- GESTIÓN DE CLICK / LONG PRESS ---
+
+        let lpTimer;
+        let isLongPress = false;
+        let activeTouch = false;
+
+        function handleRightDown(e) {
+            if(activeTouch) return;
+            activeTouch = true;
+            isLongPress = false;
+
+            lpTimer = setTimeout(() => {
+                if(isImmersion) {
+                    isLongPress = true;
+                    openSpeedMenu();
+                }
+            }, 600);
+            
+            const endEvents = ['mouseup', 'touchend', 'touchcancel'];
+            const handleUp = (event) => {
+                clearTimeout(lpTimer);
+                if (!isLongPress) {
+                    if(!isImmersion) toggleSearch();
+                    else {
+                        timerActive = !timerActive;
+                        rightBtn.classList.toggle('active', timerActive);
+                        if(timerActive) startTimer(); else stopTimer();
+                    }
+                }
+                endEvents.forEach(ev => window.removeEventListener(ev, handleUp));
+                setTimeout(() => { activeTouch = false; }, 100); 
+            };
+            endEvents.forEach(ev => window.addEventListener(ev, handleUp));
+        }
+
+        function openSpeedMenu() {
+            const opts = document.querySelectorAll('.speed-opt');
+            opts.forEach(opt => {
+                opt.classList.toggle('selected', parseInt(opt.dataset.s) === timerSeconds);
+            });
+            speedMenu.style.display = 'flex';
+        }
+
+        function startTimer() {
+            stopTimer();
+            let start = null;
+            const dur = timerSeconds * 1000;
+            function step(ts) {
+                if(!start) start = ts;
+                let progress = ts - start;
+                let ratio = Math.max(0, 1 - (progress / dur));
+                timerFill.style.transform = `scaleX(${ratio})`;
+                if(progress < dur) timerRAF = requestAnimationFrame(step);
+                else moveFocus(1);
+            }
+            timerRAF = requestAnimationFrame(step);
+        }
+
+        function stopTimer() {
+            cancelAnimationFrame(timerRAF);
+            timerFill.style.transform = 'scaleX(0)';
+        }
+
+        function setTimerSpeed(s) {
+            timerSeconds = s;
+            speedMenu.style.display = 'none';
+            if(timerActive) startTimer();
+        }
+
+        function closeSpeedMenu(e) {
+            if (!speedMenu.contains(e.target) && !rightBtn.contains(e.target)) {
+                speedMenu.style.display = 'none';
+            }
+        }
+
+        // SWIPES
+        let sx = 0;
+        iOverlay.ontouchstart = e => sx = e.touches[0].clientX;
+        iOverlay.ontouchend = e => {
+            let dx = sx - e.changedTouches[0].clientX;
+            if(Math.abs(dx) > 50) moveFocus(dx > 0 ? 1 : -1);
+        };
+
+        // TECLADO (ACCESOS RÁPIDOS)
+        window.addEventListener('keydown', e => {
+            const isSOpen = sOverlay.style.display === 'flex';
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { 
+                e.preventDefault(); toggleSearch(); return; 
+            }
+            if (e.key === "Escape") {
+                if(isSOpen) cancelSearch();
+                else if(isImmersion) toggleImmersion();
+                return;
+            }
+            if (e.key === "Enter" && isSOpen) { confirmSearch(); return; }
+            if (document.activeElement !== sInput) {
+                if(e.key === "ArrowRight") moveFocus(1);
+                if(e.key === "ArrowLeft") moveFocus(-1);
+            }
+        });
+
+        // --- MANEJO DEL VISUAL VIEWPORT (FIX PARA REDIMENSIÓN DE TECLADO) ---
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', () => {
+                updateGeometry();
+                
+                // FIX PARA EL MICRO-BUG: 
+                // Si el buscador está abierto y hay resultados, centramos la ocurrencia roja actual.
+                // Si no, centramos el foco azul habitual.
+                if (sOverlay.style.display === 'flex' && searchResults.length > 0) {
+                    scrollToIndex(searchResults[searchCursor].start);
+                } else {
+                    scrollToIndex(currentIndex);
+                }
+            });
+
+            window.visualViewport.addEventListener('scroll', () => {
+                if (window.visualViewport.offsetTop > 0) {
+                    window.scrollTo(0, 0);
+                }
+            });
+        }
+
+        // INICIALIZACIÓN
+        rightBtn.innerHTML = `<path d="${PATHS.search}"/>`;
+        window.onresize = updateGeometry;
+        scroller.onscroll = virtualRender;
+        updateGeometry();
+    </script>
+</body>
+</html>

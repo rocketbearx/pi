@@ -1,0 +1,17 @@
+{
+  "short_name": "Pi",
+  "name": "Pi-Flow",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay"],
+  "orientation": "portrait",
+  "theme_color": "#0a0c12",
+  "background_color": "#0a0c12"
+}
