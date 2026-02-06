@@ -38,24 +38,17 @@
             box-sizing: border-box; 
         }
 
-        body { 
-            /* Mantenemos tu lógica de v3.0 pero la desplazamos hacia arriba */
-            margin-top: -20px; 
-            padding-top: 20px; /* Recuperamos el espacio para que el contenido no se corte */
-            
-            height: calc(var(--vh) + 20px); /* La hacemos más larga para que no falte abajo */
-            
-            background: var(--bg-dark);
-            position: relative;
-            
-            /* El Sello de Seguridad */
-            box-shadow: 0 -15px 0 0 var(--bg-dark); /* Una sombra sólida que sube 15px */
-
+        body {
+            will-change: transform, height;
+            transform: translateZ(0);
+            backface-visibility: hidden; /* Evita parpadeos en algunos motores */
+            perspective: 1000; /* Refuerza el modo 3D */
+            margin: 0; 
             padding: 0; 
             width: 100%; 
-            
+            height: var(--vh); 
             overflow: hidden; 
-            
+            background: var(--bg-dark); 
             font-family: 'Courier New', Courier, monospace; 
             display: flex; 
             flex-direction: column; 
