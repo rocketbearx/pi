@@ -29,12 +29,9 @@
         }
 
         html {
-            background-color: var(--bg-dark); /* Evita destellos blancos al redimensionar */
+            background-color: var(--bg-dark) !important; /* Evita destellos blancos al redimensionar */
             height: 100%;
             overflow: hidden;
-            /* PRUEBA: Forzar el renderizado detrás de las barras del sistema */
-            padding-top: env(safe-area-inset-top);
-            padding-bottom: env(safe-area-inset-bottom);
         }
 
         * { 
@@ -42,18 +39,28 @@
         }
 
         body { 
-            margin: 0; 
+            /* Mantenemos tu lógica de v3.0 pero la desplazamos hacia arriba */
+            margin-top: -20px; 
+            padding-top: 20px; /* Recuperamos el espacio para que el contenido no se corte */
+            
+            height: calc(var(--vh) + 20px); /* La hacemos más larga para que no falte abajo */
+            
+            background: var(--bg-dark);
+            position: relative;
+            
+            /* El Sello de Seguridad */
+            box-shadow: 0 -15px 0 0 var(--bg-dark); /* Una sombra sólida que sube 15px */
+
             padding: 0; 
             width: 100%; 
-            height: var(--vh); 
+            
             overflow: hidden; 
-            background: var(--bg-dark); 
+            
             font-family: 'Courier New', Courier, monospace; 
             display: flex; 
             flex-direction: column; 
             /* Evita el rebote elástico que causa la línea blanca en Chrome Mobile */
             overscroll-behavior: none;
-            box-shadow: 0 0 0 2px var(--bg-dark);
             user-select: none;
             -webkit-user-select: none;
         }
