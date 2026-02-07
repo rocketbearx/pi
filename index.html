@@ -38,11 +38,7 @@
             box-sizing: border-box; 
         }
 
-        body {
-            will-change: transform, height;
-            transform: translateZ(0);
-            backface-visibility: hidden; /* Evita parpadeos en algunos motores */
-            perspective: 1000; /* Refuerza el modo 3D */
+        body { 
             margin: 0; 
             padding: 0; 
             width: 100%; 
@@ -52,7 +48,6 @@
             font-family: 'Courier New', Courier, monospace; 
             display: flex; 
             flex-direction: column; 
-            /* Evita el rebote elástico que causa la línea blanca en Chrome Mobile */
             overscroll-behavior: none;
             user-select: none;
             -webkit-user-select: none;
@@ -699,6 +694,33 @@
                 }
             });
         }
+
+        // Función para "sacudir" el motor de renderizado
+            function forceDeepReflow() {
+                // 1. Cambiamos el body a una posición fija y lo movemos 1px
+                document.body.style.transform = 'translateY(1px)';
+                
+                // 2. Forzamos lectura de una propiedad que obliga a recalcular (layout thrashing benévolo)
+                const _ = document.body.offsetHeight;
+                
+                // 3. Devolvemos a la normalidad en el siguiente frame
+                requestAnimationFrame(() => {
+                    document.body.style.transform = 'translateY(0)';
+                });
+            }
+
+            // El momento clave: Cuando el usuario vuelve a la app
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    // Le damos 100ms para que la animación de Android termine
+                    setTimeout(() => {
+                        updateGeometry();
+                        forceDeepReflow();
+                        // Un pequeño truco extra: scroll relativo
+                        window.scrollTo(0, 0);
+                    }, 1000);
+                }
+            });
 
         // INICIALIZACIÓN
         rightBtn.innerHTML = `<path d="${PATHS.search}"/>`;
