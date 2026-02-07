@@ -713,17 +713,8 @@
         repairOverlay.addEventListener('click', () => {
             // 1. Forzamos el foco para llamar al teclado
             repairInput.focus();
-            
-            // 2. Esperamos un instante mínimo a que el motor de Android reaccione
-            setTimeout(() => {
-                // 3. Quitamos el foco (cierra el teclado)
-                repairInput.blur();
-                // 4. Limpiamos la escena
-                repairOverlay.style.display = 'none';
-                
-                // 5. Recalculamos geometría por última vez
-                updateGeometry();
-            }, 50); // 50ms es suficiente para disparar el evento de resize del sistema
+            repairInput.blur();
+            repairOverlay.style.display = 'none';
         });
 
         // INICIALIZACIÓN
